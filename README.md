@@ -25,8 +25,8 @@ Local MCP (Model Context Protocol) server that enables AI assistants like [Poke]
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/meimakes/amazon-mcp.git
-   cd amazon-mcp
+   git clone https://github.com/meimakes/amazon-mcp-local.git
+   cd amazon-mcp-local
    ```
 
 2. **Install dependencies:**
@@ -300,7 +300,7 @@ This tool automates interactions with Amazon.com using browser automation. Use r
 
 ## Support
 
-- 🐛 **Issues:** [GitHub Issues](https://github.com/meimakes/amazon-mcp/issues)
+- 🐛 **Issues:** [GitHub Issues](https://github.com/meimakes/amazon-mcp-local/issues)
 - 📧 **Contact:** via GitHub
 - 🌐 **Website:** [amazon.makemcp.dev](https://amazon.makemcp.dev)
 

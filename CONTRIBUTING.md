@@ -15,7 +15,7 @@ By participating in this project, you agree to:
 ### Reporting Bugs
 
 Before creating a bug report:
-1. Check the [existing issues](https://github.com/meimakes/amazon-mcp/issues) to avoid duplicates
+1. Check the [existing issues](https://github.com/meimakes/amazon-mcp-local/issues) to avoid duplicates
 2. Ensure you're using the latest version
 3. Test with a fresh installation if possible
 
@@ -109,8 +109,8 @@ Fixes #456
 
 1. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/amazon-mcp.git
-   cd amazon-mcp
+   git clone https://github.com/YOUR_USERNAME/amazon-mcp-local.git
+   cd amazon-mcp-local
    ```
 
 2. Install dependencies:
@@ -205,7 +205,7 @@ Documentation improvements are always welcome:
 
 ## Questions?
 
-- Open an [issue](https://github.com/meimakes/amazon-mcp/issues) with the "question" label
+- Open an [issue](https://github.com/meimakes/amazon-mcp-local/issues) with the "question" label
 - Check existing issues and discussions
 
 ## License
