@@ -5,6 +5,19 @@
 
 Local MCP (Model Context Protocol) server that enables AI assistants like [Poke](https://poke.com) to interact with your personal Amazon cart through browser automation. Uses Puppeteer for browser control, exposed securely via ngrok.
 
+## ⚠️ Important Disclaimer
+
+**This tool uses browser automation to interact with Amazon.com.**
+
+- **Users are solely responsible** for ensuring their use complies with [Amazon's Terms of Service](https://www.amazon.com/gp/help/customer/display.html?nodeId=508088)
+- This project is **for personal, educational use only** - not for commercial automation or reselling
+- **Use at your own risk** - the authors assume no liability for any violations of Amazon's policies or consequences thereof
+- **Not affiliated with Amazon** - this is an independent, unofficial tool
+- Amazon may change their website or policies at any time, potentially breaking functionality
+- Excessive automation may result in account restrictions or bans
+
+By using this software, you acknowledge and accept these risks.
+
 ## Features
 
 - 🔍 **Search Amazon** - Find products by search query
@@ -292,11 +305,7 @@ Contributions welcome! Please:
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Disclaimer
-
-This tool automates interactions with Amazon.com using browser automation. Use responsibly and in accordance with Amazon's Terms of Service. The authors are not responsible for any violations of Amazon's policies or any consequences thereof.
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
