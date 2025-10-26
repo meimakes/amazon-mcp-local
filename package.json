@@ -2,6 +2,24 @@
   "name": "amazon-mcp-server",
   "version": "1.0.0",
   "description": "MCP server for Amazon cart automation",
+  "author": "Mei Park <hey@meimakes.com> (https://meimakes.com)",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "amazon",
+    "cart",
+    "automation",
+    "puppeteer",
+    "shopping"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meimakes/amazon-mcp-server.git"
+  },
+  "homepage": "https://github.com/meimakes/amazon-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/meimakes/amazon-mcp-server/issues"
+  },
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
