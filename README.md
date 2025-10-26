@@ -38,8 +38,8 @@ By using this software, you acknowledge and accept these risks.
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/meimakes/amazon-mcp-local.git
-   cd amazon-mcp-local
+   git clone https://github.com/meimakes/amazon-mcp-server.git
+   cd amazon-mcp-server
    ```
 
 2. **Install dependencies:**
@@ -309,7 +309,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
-- 🐛 **Issues:** [GitHub Issues](https://github.com/meimakes/amazon-mcp-local/issues)
+- 🐛 **Issues:** [GitHub Issues](https://github.com/meimakes/amazon-mcp-server/issues)
 - 📧 **Contact:** via GitHub
 - 🌐 **Website:** [amazon.makemcp.dev](https://amazon.makemcp.dev)
 
