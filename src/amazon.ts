@@ -1,6 +1,7 @@
 import { Page } from 'puppeteer';
 import { getPage } from './browser';
 import { AddToCartParams, CartItem, SearchResult, OperationResult } from './types';
+import { saveAmazonSession } from './session-manager';
 
 const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.com';
 const BASE_URL = `https://www.${AMAZON_DOMAIN}`;
@@ -49,6 +50,9 @@ export async function searchProducts(query: string): Promise<OperationResult> {
         };
       });
     });
+
+    // Auto-save session after successful search (captures any new cookies)
+    await saveAmazonSession(page).catch(() => {});
 
     return {
       success: true,
@@ -115,6 +119,9 @@ export async function addToCart(params: AddToCartParams): Promise<OperationResul
       // Try alternate method - check if cart count increased
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
+
+    // Auto-save session after cart modification
+    await saveAmazonSession(page).catch(() => {});
 
     return {
       success: true,
@@ -191,15 +198,43 @@ export async function checkLoginStatus(): Promise<OperationResult> {
     const page = await getPage();
     await page.goto(BASE_URL, { waitUntil: 'networkidle2' });
 
-    const isLoggedIn = await page.evaluate(() => {
+    const loginInfo = await page.evaluate(() => {
       const accountList = document.querySelector('#nav-link-accountList-nav-line-1');
-      return accountList?.textContent?.includes('Hello') || false;
+      const accountText = accountList?.textContent?.trim() || '';
+      const isLoggedIn = accountText.includes('Hello');
+
+      // Get cookie count for debugging
+      const cookieCount = document.cookie.split(';').filter(c => c.trim()).length;
+
+      return {
+        isLoggedIn,
+        accountText,
+        cookieCount,
+      };
     });
+
+    console.log('Login status check:', {
+      loggedIn: loginInfo.isLoggedIn,
+      accountText: loginInfo.accountText,
+      cookieCount: loginInfo.cookieCount,
+    });
+
+    // If logged in, save the session automatically
+    if (loginInfo.isLoggedIn) {
+      await saveAmazonSession(page).catch(() => {});
+      console.log('✓ Session auto-saved after login verification');
+    }
 
     return {
       success: true,
-      message: isLoggedIn ? 'Logged in to Amazon' : 'Not logged in',
-      data: { loggedIn: isLoggedIn },
+      message: loginInfo.isLoggedIn
+        ? `Logged in to Amazon (${loginInfo.accountText})`
+        : 'Not logged in',
+      data: {
+        loggedIn: loginInfo.isLoggedIn,
+        accountText: loginInfo.accountText,
+        cookieCount: loginInfo.cookieCount,
+      },
     };
   } catch (error) {
     return {

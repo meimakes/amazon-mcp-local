@@ -12,6 +12,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { searchProducts, addToCart, getCart, checkLoginStatus } from './amazon';
 import { closeBrowser, getBrowser, getPage } from './browser';
+import { saveAmazonSession, restoreAmazonSession } from './session-manager';
 
 dotenv.config();
 
@@ -126,6 +127,14 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
         properties: {},
       },
     },
+    {
+      name: 'save_session',
+      description: '(Optional) Manually trigger session save. Sessions are automatically saved periodically, after operations, and on shutdown, so this is typically not needed.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
     ],
   };
 });
@@ -148,6 +157,14 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case 'check_login':
         result = await checkLoginStatus();
+        break;
+      case 'save_session':
+        const page = await getPage();
+        await saveAmazonSession(page);
+        result = {
+          success: true,
+          message: 'Amazon session saved successfully. Your login will persist across server restarts.',
+        };
         break;
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -179,8 +196,25 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Create Express server for HTTP transport
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// CORS must be configured before other middleware
+app.use(cors({
+  origin: '*',
+  credentials: true,
+}));
+
+// JSON parsing for non-SSE endpoints
+app.use((req, res, next) => {
+  // Skip JSON parsing for SSE endpoint
+  if (req.path === '/sse') {
+    return next();
+  }
+  express.json()(req, res, next);
+});
+
+// Disable compression and caching for SSE
+app.set('etag', false);
+app.set('x-powered-by', false);
 
 // Track active SSE connections
 interface SSEConnection {
@@ -192,8 +226,13 @@ const activeConnections = new Map<string, SSEConnection>();
 
 // Helper to send SSE message
 function sendSSEMessage(res: Response, data: any) {
-  const message = `data: ${JSON.stringify(data)}\n\n`;
+  // MCP SSE requires explicit "message" event type for JSON-RPC responses
+  const message = `event: message\ndata: ${JSON.stringify(data)}\n\n`;
   res.write(message);
+  // Flush the response to ensure it's sent immediately
+  if ('flush' in res && typeof (res as any).flush === 'function') {
+    (res as any).flush();
+  }
 }
 
 // Authentication middleware
@@ -227,24 +266,31 @@ const authenticate = (req: Request, res: Response, next: express.NextFunction) =
 };
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', server: 'amazon-mcp-server' });
 });
 
 // SSE endpoint for MCP
 app.get('/sse', authenticate, async (req: Request, res: Response) => {
-  console.log('SSE connection request received');
+  console.log('\n=== NEW SSE CONNECTION ===');
   console.log('Request URL:', req.url);
   console.log('Request query:', req.query);
 
-  // Set SSE headers
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
+  // Send SSE headers immediately using writeHead
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
 
-  // Important: set status before writing
-  res.status(200);
+  // Disable buffering on the socket
+  const socket = res.socket || (req as any).socket;
+  if (socket) {
+    socket.setTimeout(0);
+    socket.setNoDelay(true);
+    socket.setKeepAlive(true);
+  }
 
   // Generate session ID
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -269,44 +315,66 @@ app.get('/sse', authenticate, async (req: Request, res: Response) => {
   const heartbeat = setInterval(() => {
     if (res.writable) {
       res.write(': ping\n\n');
-      console.log('Sent heartbeat for session:', sessionId);
+      console.log(`[${sessionId}] Heartbeat sent (active connections: ${activeConnections.size})`);
     } else {
+      console.log(`[${sessionId}] Connection no longer writable, stopping heartbeat`);
       clearInterval(heartbeat);
+      activeConnections.delete(sessionId);
     }
   }, 15000);
 
   // Clean up on connection close
   req.on('close', () => {
-    console.log('Request closed for session:', sessionId);
+    console.log(`[${sessionId}] Request closed (active connections: ${activeConnections.size})`);
     clearInterval(heartbeat);
     activeConnections.delete(sessionId);
   });
 
   res.on('close', () => {
-    console.log('Response closed for session:', sessionId);
+    console.log(`[${sessionId}] Response closed (active connections: ${activeConnections.size})`);
     clearInterval(heartbeat);
     activeConnections.delete(sessionId);
   });
 
   res.on('error', (err) => {
-    console.error('SSE error for session:', sessionId, err);
+    console.error(`[${sessionId}] SSE error:`, err.message);
     clearInterval(heartbeat);
     activeConnections.delete(sessionId);
   });
+
+  res.on('finish', () => {
+    console.log(`[${sessionId}] Response finished`);
+  });
+
+  console.log(`[${sessionId}] SSE connection established (total active: ${activeConnections.size})`);
 });
 
 // Message endpoint for SSE (receives client messages)
 app.post('/message', authenticate, async (req: Request, res: Response) => {
   const jsonrpcRequest = req.body;
 
-  console.log('Message received');
-  console.log('Request:', JSON.stringify(jsonrpcRequest, null, 2));
+  console.log('\n=== MESSAGE RECEIVED ===');
+  console.log('Method:', jsonrpcRequest?.method);
+  console.log('ID:', jsonrpcRequest?.id);
+  console.log('Active connections:', activeConnections.size);
+
+  // Validate request
+  if (!jsonrpcRequest || !jsonrpcRequest.method) {
+    console.error('Invalid JSON-RPC request: missing method');
+    res.status(400).json({
+      jsonrpc: '2.0',
+      error: { code: -32600, message: 'Invalid Request' },
+      id: null
+    });
+    return;
+  }
 
   // Find the most recent SSE connection (there should typically only be one)
   const connection = Array.from(activeConnections.values())[0];
 
   if (!connection) {
-    console.error('No active SSE connection found');
+    console.error('ERROR: No active SSE connection found!');
+    console.error('Available connections:', Array.from(activeConnections.keys()));
     res.status(503).json({
       jsonrpc: '2.0',
       error: { code: -32000, message: 'No active connection' },
@@ -315,9 +383,13 @@ app.post('/message', authenticate, async (req: Request, res: Response) => {
     return;
   }
 
+  console.log('Using SSE session:', connection.sessionId);
+  console.log('Connection writable:', connection.res.writable);
+
   try {
     // Check if this is a notification (no id field) or a request
-    const isNotification = !jsonrpcRequest.id && jsonrpcRequest.id !== 0;
+    // In JSON-RPC 2.0, notifications are requests without an 'id' field
+    const isNotification = !('id' in jsonrpcRequest);
 
     if (isNotification) {
       // Notifications don't get responses, just acknowledge
@@ -406,6 +478,14 @@ app.post('/message', authenticate, async (req: Request, res: Response) => {
                 properties: {},
               },
             },
+            {
+              name: 'save_session',
+              description: '(Optional) Manually trigger session save. Sessions are automatically saved periodically, after operations, and on shutdown, so this is typically not needed.',
+              inputSchema: {
+                type: 'object',
+                properties: {},
+              },
+            },
           ],
         },
       };
@@ -428,6 +508,14 @@ app.post('/message', authenticate, async (req: Request, res: Response) => {
             break;
           case 'check_login':
             toolResult = await checkLoginStatus();
+            break;
+          case 'save_session':
+            const sessionPage = await getPage();
+            await saveAmazonSession(sessionPage);
+            toolResult = {
+              success: true,
+              message: 'Amazon session saved successfully. Your login will persist across server restarts.',
+            };
             break;
           default:
             throw new Error(`Unknown tool: ${toolName}`);
@@ -467,7 +555,16 @@ app.post('/message', authenticate, async (req: Request, res: Response) => {
       };
     }
 
-    console.log('Sending response via SSE:', JSON.stringify(response, null, 2));
+    // Check if connection is still writable before sending
+    if (!connection.res.writable) {
+      console.error('ERROR: SSE connection is not writable!');
+      res.status(503).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'SSE connection closed' },
+        id: jsonrpcRequest?.id || null
+      });
+      return;
+    }
 
     // Send response via SSE
     sendSSEMessage(connection.res, response);
@@ -495,20 +592,51 @@ app.listen(PORT, async () => {
   // Initialize browser and open Amazon for login
   console.log('\nInitializing browser...');
   try {
-    const browser = await getBrowser();
+    await getBrowser();
     const page = await getPage();
     const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.com';
+
+    // Try to restore previous session first
+    const restored = await restoreAmazonSession(page);
+
     await page.goto(`https://www.${AMAZON_DOMAIN}`, { waitUntil: 'networkidle2' });
-    console.log('Browser opened! Please log into Amazon if needed.');
-    console.log('Your session will be saved for future use.\n');
+
+    if (restored) {
+      console.log('✓ Browser opened with restored session!');
+    } else {
+      console.log('✓ Browser opened! Please log into Amazon if needed.');
+    }
+    console.log('✓ Your session will be automatically saved.\n');
+
+    // Set up periodic session saving (every 5 minutes)
+    setInterval(async () => {
+      try {
+        const currentPage = await getPage();
+        await saveAmazonSession(currentPage);
+        console.log('✓ Session auto-saved');
+      } catch (error) {
+        console.error('Failed to auto-save session:', error);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
   } catch (error) {
-    console.error('Failed to initialize browser:', error);
+    console.error('✗ Failed to initialize browser:', error);
   }
 });
 
 // Cleanup on exit
 process.on('SIGINT', async () => {
   console.log('\nShutting down...');
+
+  // Save session before closing browser
+  try {
+    const page = await getPage();
+    await saveAmazonSession(page);
+    console.log('✓ Session saved before shutdown');
+  } catch (error) {
+    console.error('Failed to save session before shutdown:', error);
+  }
+
   await closeBrowser();
   process.exit(0);
 });
